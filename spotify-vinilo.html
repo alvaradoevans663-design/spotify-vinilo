@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vinilo Spotify</title>
+<style>
+:root{--gold:#d8b52c;--label:#32241f}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:linear-gradient(110deg,#8c1a14,#7a5a14 55%,#8a3a12);font-family:Georgia,"Times New Roman",serif;color:#fff;display:grid;place-items:center;overflow:hidden}
+.stage{position:relative;width:min(96vw,900px);aspect-ratio:16/9}
+.cover{position:absolute;left:0;top:50%;width:47%;aspect-ratio:1;transform:translateY(-50%) rotate(-2deg);background:#3a2a22 center/cover;box-shadow:0 20px 50px rgba(0,0,0,.5);border-radius:3px}
+.vinyl{position:absolute;left:31%;top:50%;width:56%;aspect-ratio:1;margin-top:-28%;border-radius:50%;container-type:inline-size;
+ background:repeating-radial-gradient(circle,#0b0b0b 0 .6%,#161616 .6% 1.1%);box-shadow:0 18px 40px rgba(0,0,0,.55);animation:spin 5s linear infinite;animation-play-state:paused}
+.playing .vinyl{animation-play-state:running}
+@keyframes spin{to{transform:rotate(360deg)}}
+.label{position:absolute;inset:32%;border-radius:50%;background:var(--label);border:.6cqw solid var(--gold);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 12%;gap:2cqw}
+.title{font-weight:700;color:var(--gold);font-size:3.3cqw;line-height:1.1;max-width:100%;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.artist{color:var(--gold);opacity:.85;font-size:2.4cqw;line-height:1.15;max-width:100%;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.hole{position:absolute;left:50%;top:50%;width:2.6cqw;height:2.6cqw;margin:-1.3cqw;border-radius:50%;background:radial-gradient(#fff,#888)}
+.arm{position:absolute;right:3%;top:9%;width:2%;height:62%;background:linear-gradient(90deg,#777,#eee,#777);border-radius:4px;transform-origin:50% 0;transform:rotate(-12deg);transition:transform 1.2s ease}
+.arm::before{content:"";position:absolute;top:-6%;left:-90%;width:280%;height:9%;background:#222;border-radius:4px}
+.arm::after{content:"";position:absolute;bottom:-9%;left:-120%;width:340%;height:11%;background:#1d1d1d;border-radius:3px}
+.playing .arm{transform:rotate(17deg)}
+.panel{position:fixed;inset:0;display:none;place-items:center;background:rgba(20,8,4,.82);padding:20px}
+.panel.on{display:grid}
+.box{max-width:420px;width:100%;background:#2a1a14;border:1px solid var(--gold);border-radius:12px;padding:22px;font-family:system-ui,sans-serif;font-size:15px;line-height:1.45}
+.box input{width:100%;padding:10px;border-radius:8px;border:1px solid #6b5a2a;background:#160d09;color:#fff;margin:10px 0;font-size:15px}
+.box button,.small{background:var(--gold);color:#1a110d;border:0;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer;font-size:15px}
+.box code{background:#160d09;padding:1px 5px;border-radius:4px;word-break:break-all}
+.small{position:fixed;right:12px;bottom:12px;padding:6px 10px;font-size:12px;opacity:.6}
+@media (prefers-reduced-motion:reduce){.vinyl{animation-duration:20s}}
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="cover" id="cover"></div>
+  <div class="vinyl">
+    <div class="label"><div class="title" id="title">Pon una canción en Spotify</div><div class="artist" id="artist"></div></div>
+    <div class="hole"></div>
+  </div>
+  <div class="arm"></div>
+</div>
+
+<div class="panel" id="setup"><div class="box">
+  <b>Conecta tu Spotify</b>
+  <p>1. En <code>developer.spotify.com/dashboard</code> crea una app.<br>
+  2. Agrega este Redirect URI: <code id="uri"></code><br>
+  3. Pega aquí el Client ID:</p>
+  <input id="cid" placeholder="Client ID" autocomplete="off">
+  <button id="go">Conectar</button>
+</div></div>
+<button class="small" id="reset">Ajustes</button>
+
+<script>
+const $=id=>document.getElementById(id);
+const REDIRECT=location.origin+location.pathname;
+const SCOPE="user-read-currently-playing user-read-playback-state";
+const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
+$("uri").textContent=REDIRECT;
+
+const b64=buf=>btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+const rand=()=>b64(crypto.getRandomValues(new Uint8Array(48)));
+
+async function login(clientId){
+  ls.set("sp_cid",clientId);
+  const verifier=rand();
+  ls.set("sp_ver",verifier);
+  const challenge=b64(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(verifier)));
+  const p=new URLSearchParams({client_id:clientId,response_type:"code",redirect_uri:REDIRECT,scope:SCOPE,code_challenge_method:"S256",code_challenge:challenge});
+  location.href="https://accounts.spotify.com/authorize?"+p;
+}
+
+async function tokenCall(body){
+  const r=await fetch("https://accounts.spotify.com/api/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams(body)});
+  if(!r.ok) throw new Error("token");
+  const d=await r.json();
+  ls.set("sp_access",d.access_token);
+  ls.set("sp_exp",String(Date.now()+d.expires_in*1000-30000));
+  if(d.refresh_token) ls.set("sp_refresh",d.refresh_token);
+}
+
+async function getToken(){
+  if(ls.get("sp_access")&&Date.now()<Number(ls.get("sp_exp"))) return ls.get("sp_access");
+  if(!ls.get("sp_refresh")) return null;
+  try{ await tokenCall({grant_type:"refresh_token",refresh_token:ls.get("sp_refresh"),client_id:ls.get("sp_cid")}); return ls.get("sp_access"); }
+  catch(e){ return null; }
+}
+
+let lastId=null;
+function show(title,artist,img,playing){
+  $("title").textContent=title;
+  $("artist").textContent=artist;
+  $("cover").style.backgroundImage=img?`url("${img}")`:"none";
+  $("stage").classList.toggle("playing",playing);
+}
+
+async function poll(){
+  const t=await getToken();
+  if(!t){ $("setup").classList.add("on"); return; }
+  try{
+    const r=await fetch("https://api.spotify.com/v1/me/player/currently-playing",{headers:{Authorization:"Bearer "+t}});
+    if(r.status===204){ $("stage").classList.remove("playing"); return; }
+    if(r.status===401){ ls.del("sp_access"); return; }
+    if(!r.ok) return;
+    const d=await r.json();
+    const it=d.item;
+    if(!it) return;
+    const img=(it.album&&it.album.images&&it.album.images[0]||{}).url;
+    const artists=(it.artists||it.show&&[{name:it.show.publisher}]||[]).map(a=>a.name).join(", ");
+    if(it.id!==lastId||!d.is_playing||true){ show(it.name,artists,img,d.is_playing); lastId=it.id; }
+  }catch(e){}
+}
+
+(async function init(){
+  const code=new URLSearchParams(location.search).get("code");
+  if(code){
+    try{
+      await tokenCall({grant_type:"authorization_code",code,redirect_uri:REDIRECT,client_id:ls.get("sp_cid"),code_verifier:ls.get("sp_ver")});
+    }catch(e){}
+    history.replaceState({},"",REDIRECT);
+  }
+  if(!ls.get("sp_cid")) $("setup").classList.add("on");
+  else poll();
+  setInterval(()=>{ if(ls.get("sp_cid")) poll(); },3000);
+})();
+
+$("go").onclick=()=>{ const v=$("cid").value.trim(); if(v) login(v); };
+$("reset").onclick=()=>{ ["sp_access","sp_refresh","sp_exp"].forEach(ls.del); $("cid").value=ls.get("sp_cid")||""; $("setup").classList.add("on"); };
+</script>
+</body>
+</html>
